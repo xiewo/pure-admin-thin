@@ -1,73 +1,71 @@
-import { resolve } from "path";
-import Unocss from "unocss/vite";
+import { cdn } from "./cdn";
 import vue from "@vitejs/plugin-vue";
+import { pathResolve } from "./utils";
 import { viteBuildInfo } from "./info";
 import svgLoader from "vite-svg-loader";
-import legacy from "@vitejs/plugin-legacy";
+import type { PluginOption } from "vite";
+import checker from "vite-plugin-checker";
 import vueJsx from "@vitejs/plugin-vue-jsx";
-import { viteMockServe } from "vite-plugin-mock";
-import VueI18n from "@intlify/vite-plugin-vue-i18n";
-// import ElementPlus from "unplugin-element-plus/vite";
+import Inspector from "vite-plugin-vue-inspector";
+import { configCompressPlugin } from "./compress";
+import removeNoMatch from "vite-plugin-router-warn";
 import { visualizer } from "rollup-plugin-visualizer";
 import removeConsole from "vite-plugin-remove-console";
-import themePreprocessorPlugin from "@pureadmin/theme";
-import { genScssMultipleScopeVars } from "/@/layout/theme";
+import { themePreprocessorPlugin } from "@pureadmin/theme";
+import { genScssMultipleScopeVars } from "../src/layout/theme";
+import { vitePluginFakeServer } from "vite-plugin-fake-server";
 
-export function getPluginsList(command, VITE_LEGACY) {
-  const prodMock = true;
+export function getPluginsList(
+  VITE_CDN: boolean,
+  VITE_COMPRESSION: ViteCompression
+): PluginOption[] {
   const lifecycle = process.env.npm_lifecycle_event;
   return [
     vue(),
-    // https://github.com/intlify/bundle-tools/tree/main/packages/vite-plugin-vue-i18n
-    VueI18n({
-      runtimeOnly: true,
-      compositionOnly: true,
-      include: [resolve("locales/**")]
-    }),
     // jsx、tsx语法支持
     vueJsx(),
-    Unocss(),
-    // 线上环境删除console
-    removeConsole(),
+    checker({
+      typescript: true,
+      vueTsc: true,
+      eslint: {
+        lintCommand: `eslint ${pathResolve("../{src,mock,build}/**/*.{vue,js,ts,tsx}")}`,
+        useFlatConfig: true
+      },
+      terminal: false,
+      enableBuild: false
+    }),
+    // 按下Command(⌘)+Shift(⇧)，然后点击页面元素会自动打开本地IDE并跳转到对应的代码位置
+    Inspector(),
     viteBuildInfo(),
+    /**
+     * 开发环境下移除非必要的vue-router动态路由警告No match found for location with path
+     * 非必要具体看 https://github.com/vuejs/router/issues/521 和 https://github.com/vuejs/router/issues/359
+     * vite-plugin-router-warn只在开发环境下启用，只处理vue-router文件并且只在服务启动或重启时运行一次，性能消耗可忽略不计
+     */
+    removeNoMatch(),
+    // mock支持
+    vitePluginFakeServer({
+      logger: false,
+      include: "mock",
+      infixName: false,
+      enableProd: true
+    }),
     // 自定义主题
     themePreprocessorPlugin({
       scss: {
         multipleScopeVars: genScssMultipleScopeVars(),
-        // 在生产模式是否抽取独立的主题css文件，extract为true以下属性有效
-        extract: true,
-        // 会选取defaultScopeName对应的主题css文件在html添加link
-        themeLinkTagId: "head",
-        // "head"||"head-prepend" || "body" ||"body-prepend"
-        themeLinkTagInjectTo: "head",
-        // 是否对抽取的css文件内对应scopeName的权重类名移除
-        removeCssScopeName: false
+        extract: true
       }
     }),
     // svg组件化支持
     svgLoader(),
-    // ElementPlus({}),
-    // mock支持
-    viteMockServe({
-      mockPath: "mock",
-      localEnabled: command === "serve",
-      prodEnabled: command !== "serve" && prodMock,
-      injectCode: `
-          import { setupProdMockServer } from './mockProdServer';
-          setupProdMockServer();
-        `,
-      logger: false
-    }),
-    // 是否为打包后的文件提供传统浏览器兼容性支持
-    VITE_LEGACY
-      ? legacy({
-          targets: ["ie >= 11"],
-          additionalLegacyPolyfills: ["regenerator-runtime/runtime"]
-        })
-      : null,
+    VITE_CDN ? cdn : null,
+    configCompressPlugin(VITE_COMPRESSION),
+    // 线上环境删除console
+    removeConsole({ external: ["src/assets/iconfont/iconfont.js"] }),
     // 打包分析
     lifecycle === "report"
       ? visualizer({ open: true, brotliSize: true, filename: "report.html" })
-      : null
+      : (null as any)
   ];
 }

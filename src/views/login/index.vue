@@ -1,138 +1,145 @@
 <script setup lang="ts">
 import Motion from "./utils/motion";
 import { useRouter } from "vue-router";
+import { message } from "@/utils/message";
 import { loginRules } from "./utils/rule";
-import phone from "./components/phone.vue";
-import qrCode from "./components/qrCode.vue";
-import regist from "./components/regist.vue";
-import update from "./components/update.vue";
-import { initRouter } from "/@/router/utils";
-import { message } from "@pureadmin/components";
+import { useNav } from "@/layout/hooks/useNav";
 import type { FormInstance } from "element-plus";
-import { storageSession } from "/@/utils/storage";
-import { ref, reactive, watch, computed } from "vue";
-import { operates, thirdParty } from "./utils/enums";
-import { useUserStoreHook } from "/@/store/modules/user";
-import { bg, avatar, currentWeek } from "./utils/static";
-import { ReImageVerify } from "/@/components/ReImageVerify";
-import { useRenderIcon } from "/@/components/ReIcon/src/hooks";
+import { useLayout } from "@/layout/hooks/useLayout";
+import { useUserStoreHook } from "@/store/modules/user";
+import { initRouter, getTopMenu } from "@/router/utils";
+import { bg, avatar, illustration } from "./utils/static";
+import { useRenderIcon } from "@/components/ReIcon/src/hooks";
+import { ref, reactive, toRaw, onMounted, onBeforeUnmount } from "vue";
+import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
 
-const imgCode = ref("");
+import dayIcon from "@/assets/svg/day.svg?component";
+import darkIcon from "@/assets/svg/dark.svg?component";
+import Lock from "@iconify-icons/ri/lock-fill";
+import User from "@iconify-icons/ri/user-3-fill";
+
+defineOptions({
+  name: "Login"
+});
 const router = useRouter();
 const loading = ref(false);
-const checked = ref(false);
 const ruleFormRef = ref<FormInstance>();
-const currentPage = computed(() => {
-  return useUserStoreHook().currentPage;
-});
+
+const { initStorage } = useLayout();
+initStorage();
+
+const { dataTheme, overallStyle, dataThemeChange } = useDataThemeChange();
+dataThemeChange(overallStyle.value);
+const { title } = useNav();
 
 const ruleForm = reactive({
   username: "admin",
-  password: "admin123",
-  verifyCode: ""
+  password: "admin123"
 });
 
 const onLogin = async (formEl: FormInstance | undefined) => {
-  loading.value = true;
   if (!formEl) return;
   await formEl.validate((valid, fields) => {
     if (valid) {
-      // 模拟请求，需根据实际开发进行修改
-      setTimeout(() => {
-        loading.value = false;
-        storageSession.setItem("info", {
-          username: "admin",
-          accessToken: "eyJhbGciOiJIUzUxMiJ9.test"
-        });
-        initRouter("admin").then(() => {});
-        message.success("登陆成功");
-        router.push("/");
-      }, 2000);
-    } else {
-      loading.value = false;
-      return fields;
+      loading.value = true;
+      useUserStoreHook()
+        .loginByUsername({ username: ruleForm.username, password: "admin123" })
+        .then(res => {
+          if (res.success) {
+            // 获取后端路由
+            return initRouter().then(() => {
+              router.push(getTopMenu(true).path).then(() => {
+                message("登录成功", { type: "success" });
+              });
+            });
+          } else {
+            message("登录失败", { type: "error" });
+          }
+        })
+        .finally(() => (loading.value = false));
     }
   });
 };
 
-function onHandle(value) {
-  useUserStoreHook().SET_CURRENTPAGE(value);
+/** 使用公共函数，避免`removeEventListener`失效 */
+function onkeypress({ code }: KeyboardEvent) {
+  if (["Enter", "NumpadEnter"].includes(code)) {
+    onLogin(ruleFormRef.value);
+  }
 }
 
-watch(imgCode, value => {
-  useUserStoreHook().SET_VERIFYCODE(value);
+onMounted(() => {
+  window.document.addEventListener("keypress", onkeypress);
+});
+
+onBeforeUnmount(() => {
+  window.document.removeEventListener("keypress", onkeypress);
 });
 </script>
 
 <template>
-  <img :src="bg" class="wave" />
-  <div class="login-container">
-    <div class="img">
-      <component :is="currentWeek" />
+  <div class="select-none">
+    <img :src="bg" class="wave" />
+    <div class="flex-c absolute right-5 top-3">
+      <!-- 主题 -->
+      <el-switch
+        v-model="dataTheme"
+        inline-prompt
+        :active-icon="dayIcon"
+        :inactive-icon="darkIcon"
+        @change="dataThemeChange"
+      />
     </div>
-    <div class="login-box">
-      <div class="login-form">
-        <avatar class="avatar" />
-        <Motion>
-          <h2>Pure Admin</h2>
-        </Motion>
-
-        <el-form
-          v-if="currentPage === 0"
-          ref="ruleFormRef"
-          :model="ruleForm"
-          :rules="loginRules"
-          size="large"
-          @keyup.enter="onLogin(ruleFormRef)"
-        >
-          <Motion :delay="100">
-            <el-form-item prop="username">
-              <el-input
-                clearable
-                v-model="ruleForm.username"
-                placeholder="账号"
-                :prefix-icon="useRenderIcon('user')"
-              />
-            </el-form-item>
+    <div class="login-container">
+      <div class="img">
+        <component :is="toRaw(illustration)" />
+      </div>
+      <div class="login-box">
+        <div class="login-form">
+          <avatar class="avatar" />
+          <Motion>
+            <h2 class="outline-none">{{ title }}</h2>
           </Motion>
 
-          <Motion :delay="150">
-            <el-form-item prop="password">
-              <el-input
-                clearable
-                show-password
-                v-model="ruleForm.password"
-                placeholder="密码"
-                :prefix-icon="useRenderIcon('lock')"
-              />
-            </el-form-item>
-          </Motion>
-
-          <Motion :delay="200">
-            <el-form-item prop="verifyCode">
-              <el-input
-                clearable
-                v-model="ruleForm.verifyCode"
-                placeholder="验证码"
+          <el-form
+            ref="ruleFormRef"
+            :model="ruleForm"
+            :rules="loginRules"
+            size="large"
+          >
+            <Motion :delay="100">
+              <el-form-item
+                :rules="[
+                  {
+                    required: true,
+                    message: '请输入账号',
+                    trigger: 'blur'
+                  }
+                ]"
+                prop="username"
               >
-                <template v-slot:append>
-                  <ReImageVerify v-model:code="imgCode" />
-                </template>
-              </el-input>
-            </el-form-item>
-          </Motion>
+                <el-input
+                  v-model="ruleForm.username"
+                  clearable
+                  placeholder="账号"
+                  :prefix-icon="useRenderIcon(User)"
+                />
+              </el-form-item>
+            </Motion>
 
-          <Motion :delay="250">
-            <el-form-item>
-              <div class="w-full h-20px flex justify-between items-center">
-                <el-checkbox v-model="checked">记住密码</el-checkbox>
-                <el-button
-                  type="text"
-                  @click="useUserStoreHook().SET_CURRENTPAGE(4)"
-                >
-                  忘记密码?
-                </el-button>
-              </div>
+            <Motion :delay="150">
+              <el-form-item prop="password">
+                <el-input
+                  v-model="ruleForm.password"
+                  clearable
+                  show-password
+                  placeholder="密码"
+                  :prefix-icon="useRenderIcon(Lock)"
+                />
+              </el-form-item>
+            </Motion>
+
+            <Motion :delay="250">
               <el-button
                 class="w-full mt-4"
                 size="default"
@@ -142,61 +149,16 @@ watch(imgCode, value => {
               >
                 登录
               </el-button>
-            </el-form-item>
-          </Motion>
-
-          <Motion :delay="300">
-            <el-form-item>
-              <div class="w-full h-20px flex justify-between items-center">
-                <el-button
-                  v-for="(item, index) in operates"
-                  :key="index"
-                  class="w-full mt-4"
-                  size="default"
-                  @click="onHandle(index + 1)"
-                >
-                  {{ item.title }}
-                </el-button>
-              </div>
-            </el-form-item>
-          </Motion>
-        </el-form>
-
-        <Motion v-if="currentPage === 0" :delay="350">
-          <el-form-item>
-            <el-divider>
-              <p class="text-gray-500 text-xs">第三方登录</p>
-            </el-divider>
-            <div class="w-full flex justify-evenly">
-              <span
-                v-for="(item, index) in thirdParty"
-                :key="index"
-                :title="`${item.title}登陆`"
-              >
-                <IconifyIconOnline
-                  :icon="`ri:${item.icon}-fill`"
-                  width="20"
-                  class="cursor-pointer text-gray-500 hover:text-blue-400"
-                />
-              </span>
-            </div>
-          </el-form-item>
-        </Motion>
-        <!-- 手机号登陆 -->
-        <phone v-if="currentPage === 1" />
-        <!-- 二维码登陆 -->
-        <qrCode v-if="currentPage === 2" />
-        <!-- 注册 -->
-        <regist v-if="currentPage === 3" />
-        <!-- 忘记密码 -->
-        <update v-if="currentPage === 4" />
+            </Motion>
+          </el-form>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-@import url("/@/style/login.css");
+@import url("@/style/login.css");
 </style>
 
 <style lang="scss" scoped>

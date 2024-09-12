@@ -1,86 +1,105 @@
 import { defineStore } from "pinia";
-import { store } from "/@/store";
-import { userType } from "./types";
-import { router } from "/@/router";
-import { storageSession } from "/@/utils/storage";
-import { getLogin, refreshToken } from "/@/api/user";
-import { getToken, setToken, removeToken } from "/@/utils/auth";
-import { useMultiTagsStoreHook } from "/@/store/modules/multiTags";
-
-const data = getToken();
-let token = "";
-let name = "";
-if (data) {
-  const dataJson = JSON.parse(data);
-  if (dataJson) {
-    token = dataJson?.accessToken;
-    name = dataJson?.name ?? "admin";
-  }
-}
+import {
+  type userType,
+  store,
+  router,
+  resetRouter,
+  routerArrays,
+  storageLocal
+} from "../utils";
+import {
+  type UserResult,
+  type RefreshTokenResult,
+  getLogin,
+  refreshTokenApi
+} from "@/api/user";
+import { useMultiTagsStoreHook } from "./multiTags";
+import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
 
 export const useUserStore = defineStore({
   id: "pure-user",
   state: (): userType => ({
-    token,
-    name,
-    // 前端生成的验证码（按实际需求替换）
-    verifyCode: "",
-    // 登陆显示组件判断 0：登陆 1：手机登陆 2：二维码登陆 3：注册 4：忘记密码，默认0：登陆
-    currentPage: 0
+    // 头像
+    avatar: storageLocal().getItem<DataInfo<number>>(userKey)?.avatar ?? "",
+    // 用户名
+    username: storageLocal().getItem<DataInfo<number>>(userKey)?.username ?? "",
+    // 昵称
+    nickname: storageLocal().getItem<DataInfo<number>>(userKey)?.nickname ?? "",
+    // 页面级别权限
+    roles: storageLocal().getItem<DataInfo<number>>(userKey)?.roles ?? [],
+    // 按钮级别权限
+    permissions:
+      storageLocal().getItem<DataInfo<number>>(userKey)?.permissions ?? [],
+    // 是否勾选了登录页的免登录
+    isRemembered: false,
+    // 登录页的免登录存储几天，默认7天
+    loginDay: 7
   }),
   actions: {
-    SET_TOKEN(token) {
-      this.token = token;
+    /** 存储头像 */
+    SET_AVATAR(avatar: string) {
+      this.avatar = avatar;
     },
-    SET_NAME(name) {
-      this.name = name;
+    /** 存储用户名 */
+    SET_USERNAME(username: string) {
+      this.username = username;
     },
-    SET_VERIFYCODE(verifyCode) {
-      this.verifyCode = verifyCode;
+    /** 存储昵称 */
+    SET_NICKNAME(nickname: string) {
+      this.nickname = nickname;
     },
-    SET_CURRENTPAGE(value) {
-      this.currentPage = value;
+    /** 存储角色 */
+    SET_ROLES(roles: Array<string>) {
+      this.roles = roles;
     },
-    // 登入
+    /** 存储按钮级别权限 */
+    SET_PERMS(permissions: Array<string>) {
+      this.permissions = permissions;
+    },
+    /** 存储是否勾选了登录页的免登录 */
+    SET_ISREMEMBERED(bool: boolean) {
+      this.isRemembered = bool;
+    },
+    /** 设置登录页的免登录存储几天 */
+    SET_LOGINDAY(value: number) {
+      this.loginDay = Number(value);
+    },
+    /** 登入 */
     async loginByUsername(data) {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<UserResult>((resolve, reject) => {
         getLogin(data)
           .then(data => {
-            if (data) {
-              setToken(data);
-              resolve();
-            }
+            if (data?.success) setToken(data.data);
+            resolve(data);
           })
           .catch(error => {
             reject(error);
           });
       });
     },
-    // 登出 清空缓存
+    /** 前端登出（不调用接口） */
     logOut() {
-      this.token = "";
-      this.name = "";
+      this.username = "";
+      this.roles = [];
+      this.permissions = [];
       removeToken();
-      storageSession.clear();
-      useMultiTagsStoreHook().handleTags("equal", [
-        {
-          path: "/welcome",
-          parentPath: "/",
-          meta: {
-            title: "menus.hshome",
-            icon: "home-filled"
-          }
-        }
-      ]);
+      useMultiTagsStoreHook().handleTags("equal", [...routerArrays]);
+      resetRouter();
       router.push("/login");
     },
-    // 刷新token
-    async refreshToken(data) {
-      return refreshToken(data).then(data => {
-        if (data) {
-          setToken(data);
-          return data;
-        }
+    /** 刷新`token` */
+    async handRefreshToken(data) {
+      return new Promise<RefreshTokenResult>((resolve, reject) => {
+        refreshTokenApi(data)
+          .then(data => {
+            if (data) {
+              setToken(data.data);
+              resolve(data);
+            }
+          })
+          .catch(error => {
+            reject(error);
+          });
       });
     }
   }

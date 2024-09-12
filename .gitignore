@@ -4,7 +4,8 @@ dist
 dist-ssr
 *.local
 .eslintcache
-.stylelintcache
+report.html
+vite.config.*.timestamp*
 
 yarn.lock
 npm-debug.log*
@@ -18,3 +19,4 @@ tests/**/coverage/
 *.ntvs*
 *.njsproj
 *.sln
+tsconfig.tsbuildinfo
